@@ -1,39 +1,52 @@
+import sys
 import os
-from PIL import Image
-from torchvision import models, transforms
-import torch
+sys.path.append(os.path.dirname(__file__))
 
-# Load EfficientNet-B0
-model = models.efficientnet_b0(weights="DEFAULT")
-model.eval()
+from load_model import load_model
+from predict_video import predict_video
+from predict_video import predict_uploaded_video
 
-# Preprocessing
-preprocess = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
-])
+# Load model once
+model = load_model()
 
-frame_folder = "frames"
+def get_deepfake_result(video_path):
+    score = predict_video(video_path, model)
+    percentage = round(score * 100, 2)
 
-scores = []
+    if percentage >= 70:
+        verdict = "FAKE"
+        risk = "HIGH RISK"
+    elif percentage >= 40:
+        verdict = "SUSPICIOUS"
+        risk = "MEDIUM RISK"
+    else:
+        verdict = "REAL"
+        risk = "LOW RISK"
 
-for file in os.listdir(frame_folder):
+    return {
+        "deepfake_score": percentage,
+        "verdict": verdict,
+        "risk_level": risk
+    }
 
-    if file.endswith(".jpg"):
+def get_deepfake_result_from_upload(uploaded_file):
+    score = predict_uploaded_video(
+        uploaded_file, model
+    )
+    percentage = round(score * 100, 2)
 
-        img_path = os.path.join(frame_folder, file)
+    if percentage >= 70:
+        verdict = "FAKE"
+        risk = "HIGH RISK"
+    elif percentage >= 40:
+        verdict = "SUSPICIOUS"
+        risk = "MEDIUM RISK"
+    else:
+        verdict = "REAL"
+        risk = "LOW RISK"
 
-        img = Image.open(img_path)
-
-        img_tensor = preprocess(img).unsqueeze(0)
-
-        with torch.no_grad():
-            output = model(img_tensor)
-
-        confidence = torch.max(torch.softmax(output, dim=1)).item()
-
-        scores.append(confidence)
-
-avg_score = sum(scores) / len(scores)
-
-print("Average Confidence Score:", round(avg_score, 4))
+    return {
+        "deepfake_score": percentage,
+        "verdict": verdict,
+        "risk_level": risk
+    }
