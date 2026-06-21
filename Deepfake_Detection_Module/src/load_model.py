@@ -1,29 +1,40 @@
 import torch
 import torch.nn as nn
 from torchvision import models
+import os
+
 
 def load_model():
-    # EfficientNet B0 — same as their repo
-    model = models.efficientnet_b0(weights=None)
-    
-    # 2-class classifier with dropout 0.4
-    # (exactly as their README says)
+
+    model = models.efficientnet_b0(
+        weights=None
+    )
+
     model.classifier = nn.Sequential(
         nn.Dropout(p=0.4),
         nn.Linear(
-            model.classifier[1].in_features, 2
+            model.classifier[1].in_features,
+            2
         )
     )
-    
-    # Load their pretrained weights
+
+    current_dir = os.path.dirname(__file__)
+
+    model_path = os.path.join(
+        current_dir,
+        "..",
+        "models",
+        "best_model-v3.pt"
+    )
+
     model.load_state_dict(
         torch.load(
-            "models/best_model-v3.pt",
+            model_path,
             map_location="cpu"
         ),
         strict=False
     )
-    
+
     model.eval()
-    print("✅ Model loaded successfully!")
+
     return model
