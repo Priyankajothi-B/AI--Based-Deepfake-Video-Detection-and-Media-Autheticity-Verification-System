@@ -42,7 +42,7 @@ gradcam = GradCAM(model)
 
 
 # =========================
-# GRAD-CAM GENERATION
+# GRAD-CAM + CONFIDENCE
 # =========================
 def generate_gradcam(video_path):
 
@@ -57,7 +57,7 @@ def generate_gradcam(video_path):
     cap.release()
 
     if not ret:
-        return None, None
+        return None, None, None, None
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -65,6 +65,13 @@ def generate_gradcam(video_path):
 
     img_tensor = preprocess(img).unsqueeze(0)
     img_tensor.requires_grad_(True)
+
+    # Model prediction
+    output = model(img_tensor)
+    probs = torch.softmax(output, dim=1)[0]
+
+    real_conf = float(probs[0])
+    fake_conf = float(probs[1])
 
     # Grad-CAM
     cam = gradcam.generate(img_tensor)
@@ -74,13 +81,13 @@ def generate_gradcam(video_path):
     output_path = "/content/gradcam/outputs/gradcam_output.jpg"
     cv2.imwrite(output_path, result)
 
-    return output_path, cam
+    return output_path, cam, real_conf, fake_conf
 
 
 # =========================
-# EXPLAINABILITY (DETAILED)
+# EXPLAINABILITY (CONSISTENT WITH MODEL)
 # =========================
-def explain_heatmap(cam):
+def explain_heatmap(cam, real_conf, fake_conf):
 
     h, w = cam.shape
     cam = cam / (cam.max() + 1e-8)
@@ -95,47 +102,83 @@ def explain_heatmap(cam):
 
     explanation = []
 
-    explanation.append("🧠 Grad-CAM Analysis Report:")
+    # =========================
+    # FINAL DECISION FIRST
+    # =========================
+    if fake_conf > real_conf:
+        explanation.append("🚨 FINAL PREDICTION: FAKE VIDEO DETECTED")
+    else:
+        explanation.append("✅ FINAL PREDICTION: REAL VIDEO DETECTED")
 
-    # Eye analysis
-    if eye_score > 0.6:
+    explanation.append("\n🧠 WHY THE MODEL DECIDED THIS:")
+
+    # =========================
+    # EYES
+    # =========================
+    if eye_score > 0.5:
         explanation.append(
-            "👁️ Eye Region: Strong attention detected. This suggests unnatural eye movement, "
-            "inconsistent blinking, or identity manipulation often seen in deepfakes."
+            "👁️ Eye Region strongly influenced the decision. "
+            "Model detected irregular eye patterns such as unnatural blinking, gaze shifts, "
+            "or identity inconsistency often found in deepfakes."
         )
     else:
         explanation.append(
-            "👁️ Eye Region: Normal attention. No strong signs of eye-related manipulation."
+            "👁️ Eye Region had low influence. Eye movement appears consistent with natural behavior."
         )
 
-    # Mouth analysis
-    if mouth_score > 0.6:
+    # =========================
+    # MOUTH
+    # =========================
+    if mouth_score > 0.5:
         explanation.append(
-            "👄 Mouth Region: High attention detected. This may indicate lip-sync mismatch, "
-            "speech misalignment, or facial animation artifacts."
+            "👄 Mouth Region influenced prediction. Possible lip-sync mismatch or speech-to-face misalignment detected."
         )
     else:
         explanation.append(
-            "👄 Mouth Region: Normal attention. Lip movement appears consistent."
+            "👄 Mouth Region shows normal behavior with no strong manipulation signals."
         )
 
-    # Face analysis
-    if face_score > 0.7:
+    # =========================
+    # FACE
+    # =========================
+    if face_score > 0.6:
         explanation.append(
-            "🧑 Face Region: Strong overall activation. Possible synthetic face generation detected."
-        )
-    elif face_score < 0.3:
-        explanation.append(
-            "🧑 Face Region: Low activation. Likely a REAL and natural video."
+            "🧑 Full face structure strongly influenced decision. This indicates synthetic facial generation artifacts."
         )
     else:
         explanation.append(
-            "🧑 Face Region: Moderate activation. Some suspicious but not conclusive patterns."
+            "🧑 Face structure contribution is moderate or low."
         )
 
+    # =========================
+    # FINAL NOTE
+    # =========================
     explanation.append(
-        "📌 Final Insight: Grad-CAM highlights regions influencing the model’s decision. "
-        "Higher activation in eyes/mouth often correlates with deepfake artifacts."
+        "\n📌 NOTE: Grad-CAM shows WHICH regions influenced the model decision, "
+        "not whether those regions are fake independently."
     )
 
     return explanation
+
+
+# =========================
+# RUN + DISPLAY OUTPUT
+# =========================
+from IPython.display import Image, display
+
+video_path = list(video.keys())[0]
+
+path, cam, real_conf, fake_conf = generate_gradcam(video_path)
+
+print("\n📊 CONFIDENCE SCORES:")
+print("Real:", real_conf)
+print("Fake:", fake_conf)
+
+print("\n🧠 EXPLANATION:\n")
+exp = explain_heatmap(cam, real_conf, fake_conf)
+
+for line in exp:
+    print(line)
+
+print("\n🖼️ OUTPUT IMAGE:")
+display(Image(path))
